@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # ============================================================
 # УСТАНОВЩИК НОДЫ REMNAWAVE (ЧЕРЕЗ API)
 # Минималистичный и проверенный
@@ -7,7 +6,7 @@
 
 set -e
 
-# Цвета (без смайликов)
+# Цвета
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -29,44 +28,47 @@ fi
 clear
 
 # Баннер
-echo -e "${BLUE}  
-╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║   ███╗   ██╗ ██████╗ ██████╗ ███████╗                  ║
-║   ████╗  ██║██╔═══██╗██╔══██╗██╔════╝                  ║
-║   ██╔██╗ ██║██║   ██║██║  ██║█████╗                    ║
-║   ██║╚██╗██║██║   ██║██║  ██║██╔══╝                    ║
-║   ██║ ╚████║╚██████╔╝██████╔╝███████╗                  ║
-║   ╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚══════╝                  ║
-║                                                          ║
-║             УСТАНОВЩИК НОДЫ REMNAWAVE                   ║
-║                   API  v2.0                             ║
-╚══════════════════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}"
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║                                                          ║"
+echo "║   ███╗   ██╗ ██████╗ ██████╗ ███████╗                  ║"
+echo "║   ████╗  ██║██╔═══██╗██╔══██╗██╔════╝                  ║"
+echo "║   ██╔██╗ ██║██║   ██║██║  ██║█████╗                    ║"
+echo "║   ██║╚██╗██║██║   ██║██║  ██║██╔══╝                    ║"
+echo "║   ██║ ╚████║╚██████╔╝██████╔╝███████╗                  ║"
+echo "║   ╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚══════╝                  ║"
+echo "║                                                          ║"
+echo "║             УСТАНОВЩИК НОДЫ REMNAWAVE                   ║"
+echo "║                   API  v2.1                             ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
 
 # ============================================
 # ВВОД ДАННЫХ
 # ============================================
 
-read -p "$(echo -e ${YELLOW}Введите URL панели (пример: https://panel.domain.com): ${NC})" PANEL_URL
+echo ""
+echo -e "${YELLOW}Введите данные для подключения к панели:${NC}"
+
+read -p "$(echo -e ${YELLOW}URL панели (https://panel.domain.com): ${NC})" PANEL_URL
 PANEL_URL=$(echo "$PANEL_URL" | sed 's:/*$::')
 if [[ ! "$PANEL_URL" =~ ^https?:// ]]; then
     err "URL должен начинаться с http:// или https://"
     exit 1
 fi
 
-read -sp "$(echo -e ${YELLOW}Введите API-ключ: ${NC})" API_KEY
+read -sp "$(echo -e ${YELLOW}API-ключ: ${NC})" API_KEY
 echo
 if [ ${#API_KEY} -lt 10 ]; then
     err "API-ключ слишком короткий"
     exit 1
 fi
 
-read -p "$(echo -e ${YELLOW}Имя ноды (оставьте пустым для авто-имени): ${NC})" NODE_NAME
+read -p "$(echo -e ${YELLOW}Имя ноды (Enter для авто): ${NC})" NODE_NAME
 [ -z "$NODE_NAME" ] && NODE_NAME="Node-$(hostname)"
 
-# Порт ноды
 while true; do
-    read -p "$(echo -e ${YELLOW}Порт ноды (по умолчанию 2222): ${NC})" NODE_PORT
+    read -p "$(echo -e ${YELLOW}Порт ноды (2222): ${NC})" NODE_PORT
     [ -z "$NODE_PORT" ] && NODE_PORT="2222"
     if [[ "$NODE_PORT" =~ ^[0-9]+$ ]] && [ "$NODE_PORT" -ge 1 ] && [ "$NODE_PORT" -le 65535 ]; then
         break
@@ -75,7 +77,6 @@ while true; do
     fi
 done
 
-# IP сервера
 SERVER_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
 echo -e "${BLUE}[*] IP сервера: ${SERVER_IP}${NC}"
 
@@ -85,7 +86,6 @@ echo -e "${BLUE}[*] IP сервера: ${SERVER_IP}${NC}"
 
 info "Проверка подключения к панели..."
 
-# Пробуем получить список нод для проверки токена
 HTTP_RESPONSE=$(curl -s -o /tmp/api_response -w "%{http_code}" -X GET "$PANEL_URL/api/nodes" \
     -H "x-api-key: $API_KEY" \
     -H "Content-Type: application/json")
@@ -104,7 +104,6 @@ fi
 
 info "Поиск ноды '$NODE_NAME'..."
 
-# Ищем существующую ноду по имени
 NODE_ID=$(grep -o "\"id\":\"[^\"]*\",\"name\":\"$NODE_NAME\"" /tmp/api_response 2>/dev/null | head -1 | sed 's/.*"id":"\([^"]*\)".*/\1/')
 
 if [ -n "$NODE_ID" ]; then
@@ -170,10 +169,8 @@ NODE_DIR="/opt/remnanode"
 mkdir -p "$NODE_DIR"
 cd "$NODE_DIR"
 
-# Сохраняем конфиг
 cat /tmp/node_compose > docker-compose.yml
 
-# Если в конфиге нет порта, добавляем через .env
 if ! grep -q "APP_PORT" docker-compose.yml 2>/dev/null; then
     echo "APP_PORT=$NODE_PORT" > .env
     ok "Добавлен порт в .env"
@@ -193,7 +190,7 @@ else
 fi
 
 # ============================================
-# ИТОГОВАЯ ИНФОРМАЦИЯ
+# ИТОГ
 # ============================================
 
 echo ""
@@ -205,11 +202,10 @@ echo -e "${GREEN}║  ID:    $NODE_ID                                      ║${
 echo -e "${GREEN}║  Порт:  $NODE_PORT                                     ║${NC}"
 echo -e "${GREEN}║  Путь:  $NODE_DIR                                      ║${NC}"
 echo -e "${GREEN}║                                                          ║${NC}"
-echo -e "${GREEN}║  Логи:  docker compose -f $NODE_DIR/docker-compose.yml logs -f${NC}"
-echo -e "${GREEN}║  Статус: docker compose -f $NODE_DIR/docker-compose.yml ps${NC}"
+echo -e "${GREEN}║  Логи:  cd $NODE_DIR && docker compose logs -f         ║${NC}"
+echo -e "${GREEN}║  Статус: cd $NODE_DIR && docker compose ps             ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 
-# Проверка открытых портов
 echo ""
-info "Проверка портов на сервере:"
-ss -tulpn | grep -E ":$NODE_PORT |:3042[3-6] " | awk '{print $4}' | sort -u || warn "Нет активных портов из диапазона"
+info "Проверка портов:"
+ss -tulpn | grep -E ":$NODE_PORT |:3042[3-6] " | awk '{print $4}' | sort -u || warn "Нет активных портов"
