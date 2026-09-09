@@ -1,7 +1,6 @@
 #!/bin/bash
 # ============================================================
 # УСТАНОВЩИК НОДЫ REMNAWAVE (ЧЕРЕЗ API)
-# Минималистичный и проверенный
 # ============================================================
 
 set -e
@@ -11,7 +10,6 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;36m'
-BOLD='\033[1m'
 NC='\033[0m'
 
 info()  { echo -e "${BLUE}[*]${NC} $1"; }
@@ -50,25 +48,33 @@ echo -e "${NC}"
 echo ""
 echo -e "${YELLOW}Введите данные для подключения к панели:${NC}"
 
-read -p "$(echo -e ${YELLOW}URL панели (https://panel.domain.com): ${NC})" PANEL_URL
+# URL панели
+echo -ne "${YELLOW}URL панели (https://panel.domain.com): ${NC}"
+read PANEL_URL
 PANEL_URL=$(echo "$PANEL_URL" | sed 's:/*$::')
 if [[ ! "$PANEL_URL" =~ ^https?:// ]]; then
     err "URL должен начинаться с http:// или https://"
     exit 1
 fi
 
-read -sp "$(echo -e ${YELLOW}API-ключ: ${NC})" API_KEY
+# API-ключ
+echo -ne "${YELLOW}API-ключ: ${NC}"
+read -s API_KEY
 echo
 if [ ${#API_KEY} -lt 10 ]; then
     err "API-ключ слишком короткий"
     exit 1
 fi
 
-read -p "$(echo -e ${YELLOW}Имя ноды (Enter для авто): ${NC})" NODE_NAME
+# Имя ноды
+echo -ne "${YELLOW}Имя ноды (Enter для авто): ${NC}"
+read NODE_NAME
 [ -z "$NODE_NAME" ] && NODE_NAME="Node-$(hostname)"
 
+# Порт ноды
 while true; do
-    read -p "$(echo -e ${YELLOW}Порт ноды (2222): ${NC})" NODE_PORT
+    echo -ne "${YELLOW}Порт ноды (2222): ${NC}"
+    read NODE_PORT
     [ -z "$NODE_PORT" ] && NODE_PORT="2222"
     if [[ "$NODE_PORT" =~ ^[0-9]+$ ]] && [ "$NODE_PORT" -ge 1 ] && [ "$NODE_PORT" -le 65535 ]; then
         break
