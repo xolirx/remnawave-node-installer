@@ -1,217 +1,77 @@
 #!/bin/bash
-# ============================================================
-# УСТАНОВЩИК НОДЫ REMNAWAVE (ЧЕРЕЗ API)
-# ============================================================
+# Установка ноды Remnawave через API (без лишнего дизайна)
 
-set -e
-
-# Цвета
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;36m'
-NC='\033[0m'
-
-info()  { echo -e "${BLUE}[*]${NC} $1"; }
-ok()    { echo -e "${GREEN}[+]${NC} $1"; }
-warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
-err()   { echo -e "${RED}[x]${NC} $1" >&2; }
-
-# Проверка root
 if [ "$(id -u)" -ne 0 ]; then
-    err "Запусти скрипт через sudo -i"
+    echo "Ошибка: запустите скрипт через sudo -i"
     exit 1
 fi
 
-clear
-
-# Баннер
-echo -e "${BLUE}"
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║                                                          ║"
-echo "║   ███╗   ██╗ ██████╗ ██████╗ ███████╗                  ║"
-echo "║   ████╗  ██║██╔═══██╗██╔══██╗██╔════╝                  ║"
-echo "║   ██╔██╗ ██║██║   ██║██║  ██║█████╗                    ║"
-echo "║   ██║╚██╗██║██║   ██║██║  ██║██╔══╝                    ║"
-echo "║   ██║ ╚████║╚██████╔╝██████╔╝███████╗                  ║"
-echo "║   ╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚══════╝                  ║"
-echo "║                                                          ║"
-echo "║             УСТАНОВЩИК НОДЫ REMNAWAVE                   ║"
-echo "║                   API  v2.1                             ║"
-echo "╚══════════════════════════════════════════════════════════╝"
-echo -e "${NC}"
-
-# ============================================
-# ВВОД ДАННЫХ
-# ============================================
-
-echo ""
-echo -e "${YELLOW}Введите данные для подключения к панели:${NC}"
-
-# URL панели
-echo -ne "${YELLOW}URL панели (https://panel.domain.com): ${NC}"
-read PANEL_URL
-PANEL_URL=$(echo "$PANEL_URL" | sed 's:/*$::')
-if [[ ! "$PANEL_URL" =~ ^https?:// ]]; then
-    err "URL должен начинаться с http:// или https://"
-    exit 1
-fi
-
-# API-ключ
-echo -ne "${YELLOW}API-ключ: ${NC}"
-read -s API_KEY
+# Запрашиваем данные
+read -p "URL панели (https://panel.domain.com): " PANEL_URL
+read -sp "API-ключ: " API_KEY
 echo
-if [ ${#API_KEY} -lt 10 ]; then
-    err "API-ключ слишком короткий"
-    exit 1
-fi
-
-# Имя ноды
-echo -ne "${YELLOW}Имя ноды (Enter для авто): ${NC}"
-read NODE_NAME
+read -p "Имя ноды (Enter для авто): " NODE_NAME
 [ -z "$NODE_NAME" ] && NODE_NAME="Node-$(hostname)"
+read -p "Порт ноды (по умолчанию 2222): " NODE_PORT
+[ -z "$NODE_PORT" ] && NODE_PORT="2222"
 
-# Порт ноды
-while true; do
-    echo -ne "${YELLOW}Порт ноды (2222): ${NC}"
-    read NODE_PORT
-    [ -z "$NODE_PORT" ] && NODE_PORT="2222"
-    if [[ "$NODE_PORT" =~ ^[0-9]+$ ]] && [ "$NODE_PORT" -ge 1 ] && [ "$NODE_PORT" -le 65535 ]; then
-        break
-    else
-        warn "Введите число от 1 до 65535"
-    fi
-done
+# IP сервера
+SERVER_IP=$(curl -fsS https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
+echo "IP сервера: $SERVER_IP"
 
-SERVER_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
-echo -e "${BLUE}[*] IP сервера: ${SERVER_IP}${NC}"
-
-# ============================================
-# ПРОВЕРКА API
-# ============================================
-
-info "Проверка подключения к панели..."
-
-HTTP_RESPONSE=$(curl -s -o /tmp/api_response -w "%{http_code}" -X GET "$PANEL_URL/api/nodes" \
-    -H "x-api-key: $API_KEY" \
-    -H "Content-Type: application/json")
-
-if [ "$HTTP_RESPONSE" = "200" ]; then
-    ok "API-ключ валидный"
-else
-    err "Ошибка API (код $HTTP_RESPONSE). Проверьте URL и API-ключ."
-    cat /tmp/api_response 2>/dev/null
+# Проверяем API
+echo "Проверка API..."
+HTTP_CODE=$(curl -s -o /tmp/api_nodes -w "%{http_code}" -X GET "$PANEL_URL/api/nodes" \
+    -H "x-api-key: $API_KEY" -H "Content-Type: application/json")
+if [ "$HTTP_CODE" != "200" ]; then
+    echo "Ошибка: неверный URL или API-ключ (код $HTTP_CODE)"
     exit 1
 fi
+echo "API-ключ валидный"
 
-# ============================================
-# ПОИСК/СОЗДАНИЕ НОДЫ
-# ============================================
-
-info "Поиск ноды '$NODE_NAME'..."
-
-NODE_ID=$(grep -o "\"id\":\"[^\"]*\",\"name\":\"$NODE_NAME\"" /tmp/api_response 2>/dev/null | head -1 | sed 's/.*"id":"\([^"]*\)".*/\1/')
-
-if [ -n "$NODE_ID" ]; then
-    ok "Нода уже существует (ID: $NODE_ID)"
-else
-    info "Создание новой ноды..."
+# Ищем или создаём ноду
+NODE_ID=$(grep -o "\"id\":\"[^\"]*\",\"name\":\"$NODE_NAME\"" /tmp/api_nodes | head -1 | sed 's/.*"id":"\([^"]*\)".*/\1/')
+if [ -z "$NODE_ID" ]; then
+    echo "Создаём ноду..."
     CREATE_DATA="{\"name\":\"$NODE_NAME\",\"ip\":\"$SERVER_IP\",\"port\":$NODE_PORT}"
     curl -s -X POST "$PANEL_URL/api/nodes" \
         -H "x-api-key: $API_KEY" \
         -H "Content-Type: application/json" \
         -d "$CREATE_DATA" > /tmp/node_create
-    
-    if grep -q "id" /tmp/node_create; then
-        NODE_ID=$(grep -o "\"id\":\"[^\"]*\"" /tmp/node_create | head -1 | sed 's/.*"id":"\([^"]*\)".*/\1/')
-        ok "Нода создана (ID: $NODE_ID)"
-    else
-        err "Не удалось создать ноду:"
-        cat /tmp/node_create
+    NODE_ID=$(grep -o "\"id\":\"[^\"]*\"" /tmp/node_create | head -1 | sed 's/.*"id":"\([^"]*\)".*/\1/')
+    if [ -z "$NODE_ID" ]; then
+        echo "Ошибка создания ноды"
         exit 1
     fi
+    echo "Нода создана, ID: $NODE_ID"
+else
+    echo "Нода уже существует, ID: $NODE_ID"
 fi
 
-# ============================================
-# ПОЛУЧЕНИЕ КОНФИГА НОДЫ
-# ============================================
-
-info "Получение конфигурации ноды..."
-
+# Получаем конфиг ноды
+echo "Получаем конфиг..."
 curl -s -X GET "$PANEL_URL/api/nodes/$NODE_ID/docker-compose" \
     -H "x-api-key: $API_KEY" > /tmp/node_compose
 
-if grep -q "version\|services" /tmp/node_compose 2>/dev/null; then
-    ok "Конфигурация получена"
-else
-    err "Не удалось получить конфиг:"
-    cat /tmp/node_compose
-    exit 1
-fi
-
-# ============================================
-# УСТАНОВКА DOCKER
-# ============================================
-
+# Устанавливаем Docker (если нет)
 if ! command -v docker &>/dev/null; then
-    info "Установка Docker..."
-    apt update -qq
-    apt install -y -qq apt-transport-https ca-certificates curl software-properties-common
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - &>/dev/null
-    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" -y
-    apt update -qq
-    apt install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    echo "Устанавливаем Docker..."
+    apt update -qq && apt install -y -qq docker.io docker-compose-plugin
     systemctl enable --now docker &>/dev/null
-    ok "Docker установлен"
-else
-    ok "Docker уже есть"
 fi
 
-# ============================================
-# ЗАПУСК НОДЫ
-# ============================================
-
+# Запускаем ноду
 NODE_DIR="/opt/remnanode"
 mkdir -p "$NODE_DIR"
 cd "$NODE_DIR"
+cp /tmp/node_compose docker-compose.yml
 
-cat /tmp/node_compose > docker-compose.yml
-
+# Если в конфиге нет порта — добавляем
 if ! grep -q "APP_PORT" docker-compose.yml 2>/dev/null; then
     echo "APP_PORT=$NODE_PORT" > .env
-    ok "Добавлен порт в .env"
 fi
 
-info "Запуск ноды..."
-docker compose pull -q
+echo "Запускаем ноду..."
 docker compose up -d
 
-sleep 3
-
-if docker ps | grep -q remnanode; then
-    ok "Нода запущена"
-else
-    warn "Нода не запустилась. Логи:"
-    docker compose logs --tail=20
-fi
-
-# ============================================
-# ИТОГ
-# ============================================
-
-echo ""
-echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║  УСТАНОВКА ЗАВЕРШЕНА                                   ║${NC}"
-echo -e "${GREEN}║                                                          ║${NC}"
-echo -e "${GREEN}║  Имя:   $NODE_NAME                                     ║${NC}"
-echo -e "${GREEN}║  ID:    $NODE_ID                                      ║${NC}"
-echo -e "${GREEN}║  Порт:  $NODE_PORT                                     ║${NC}"
-echo -e "${GREEN}║  Путь:  $NODE_DIR                                      ║${NC}"
-echo -e "${GREEN}║                                                          ║${NC}"
-echo -e "${GREEN}║  Логи:  cd $NODE_DIR && docker compose logs -f         ║${NC}"
-echo -e "${GREEN}║  Статус: cd $NODE_DIR && docker compose ps             ║${NC}"
-echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
-
-echo ""
-info "Проверка портов:"
-ss -tulpn | grep -E ":$NODE_PORT |:3042[3-6] " | awk '{print $4}' | sort -u || warn "Нет активных портов"
+echo "Готово. Проверка: docker ps | grep remnanode"
